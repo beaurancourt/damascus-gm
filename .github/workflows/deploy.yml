@@ -1,0 +1,68 @@
+name: Deploy GM site
+
+# The app itself lives in beaurancourt/damascus and builds two variants from
+# one codebase. This repo exists to give the GM variant its own Pages site at
+# /damascus-gm/, so it checks the app out rather than holding a copy of it.
+
+on:
+  push:
+    branches:
+      - main
+  schedule:
+    # Daily, so changes merged into the app repo reach this site without
+    # anyone remembering to come here.
+    - cron: '17 5 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the app
+        uses: actions/checkout@v4
+        with:
+          repository: beaurancourt/damascus
+          ref: damascus/main
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        # Matching the app repo: `npm install`, not `npm ci`, so optional
+        # native deps missing from a darwin-authored lock resolve on linux.
+        run: npm install --no-audit --no-fund --prefer-offline
+
+      - name: Build the GM variant
+        run: npm run build:gm
+        env:
+          NODE_ENV: production
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist-gm
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
